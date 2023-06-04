@@ -4,19 +4,25 @@ from smartcard.CardMonitoring import CardMonitor, CardObserver
 from smartcard.CardConnectionObserver import ConsoleCardConnectionObserver
 from smartcard.util import toHexString
 from tkinter.font import Font
- 
+from tkinter import ttk
 
 import getData
 #import getSerial
 from PIL import ImageTk, Image
 import mydb
- 
+import os
 import serial
 import configparser
+import logging
+import getImage
+logging.basicConfig(filename='app.log', level=logging.ERROR, format='%(asctime)s %(levelname)s: %(message)s')
  
 config = configparser.RawConfigParser()
 config.read('app-config.ini')
 serialport=config.get('HOSxP','serialport')
+
+
+  
  
 # a simple card observer that prints inserted/removed cards
 class PrintObserver(CardObserver):
@@ -24,11 +30,15 @@ class PrintObserver(CardObserver):
     when cards are inserted/removed from the system and
     prints the list of cards
     """
-    def __init__(self,cid,sysValue,diaValue,pulseVvalue,sysInfo,serialport,baudrate):
+    def __init__(self,cid,sysValue,diaValue,pulseVvalue,sysInfo,serialport,baudrate,canvas,canvas_background,progress_bar):
         self.observer = ConsoleCardConnectionObserver()
         config = configparser.RawConfigParser()
         config.read('app-config.ini')
         serialport=config.get('HOSxP','serialport')
+
+        self.font1 = Font(family="Tahoma", size=10, weight="bold")
+        self.font2 = Font(family="Tahoma", size=12, weight="bold")
+        self.font3 = Font(family="Tahoma", size=30, weight="bold")
 
         self.cid = cid
         self.sysValue = sysValue
@@ -37,8 +47,14 @@ class PrintObserver(CardObserver):
         self.sysInfo = sysInfo
         self.baud_rate = '9600'
         self.serialport = serialport
-
-        self.sysInfo.set("-- กรุณาเสียบบัตรประจำตัวประชาชน --")
+        #self.image_label = image_label
+        self.canvas = canvas
+        self.canvas_background = canvas_background
+        global text_item_id 
+        self.progressbar = progress_bar
+         
+        #self.sysInfo.set("-- กรุณาเสียบบัตรประจำตัวประชาชน --")
+        self.text_item_id=self.canvas_background.create_text(750, 50, text="-- กรุณาเสียบบัตรประจำตัวประชาชน --",fill='#fff',font=self.font3)
         
 
     def open_serial_port(self):
@@ -47,6 +63,7 @@ class PrintObserver(CardObserver):
         # Rest of your code
         except Exception as e:
             print("Error opening serial port:", str(e))
+            logging.error(str(e))
         #self.serial = serial.Serial(serialport, 9600, timeout=1)
         self.serial.close()
         try:
@@ -98,13 +115,6 @@ class PrintObserver(CardObserver):
                         print("Value 2:", value3)
                         return split_data
 
-
-    
-
-
-
-
-
     def close_serial_port(self):
         if self.serial.is_open:
             self.serial.close()
@@ -112,16 +122,88 @@ class PrintObserver(CardObserver):
         else:
             print("Serial port is already closed.")
 
+    
+
+############## Card Monitor ##############################################
+
     def update(self, observable, actions):
         (addedcards, removedcards) = actions
         for card in addedcards:
             print("+Inserted: ", toHexString(card.atr))
-            self.sysInfo.set("--กำลังอ่านข้อมูลจากบัตร--")
+            #self.sysInfo.set("-- กำลังอ่านข้อมูลจากบัตร--")
+            self.progressbar.place(x=100, y=450)
+            self.progressbar.start()
+             
+            self.canvas_background.delete(self.text_item_id)
+            self.text_item_id=self.text_item_id=self.canvas_background.create_text(750, 50, text="-- กำลังอ่านข้อมูลจากบัตร--",fill='#fff',font=self.font3)
 
-            cid=getData.checkCard()
 
+            self.canvas.delete('all')
+            self.image_path = r"images/card_insert.png"
+            self.image = Image.open(self.image_path)
+            self.tk_image = ImageTk.PhotoImage(file=self.image_path)
+            self.canvas.config(width=self.image.width, height=self.image.height)
+            self.canvas.create_image(0, 0, anchor=NW, image=self.tk_image)
+            
+
+            try:
+                cid=getData.checkCard()
+            except:
+                
+                self.progressbar.stop()
+                self.progressbar.place_forget()
+                self.canvas_background.delete(self.text_item_id)
+                self.text_item_id=self.text_item_id=self.canvas_background.create_text(750, 50, text="-- ไม่สามารถอ่านข้อมูลจากบัตร --",fill='#fff',font=self.font3)
+           
+            else:
+                EN_name =getData.getENFullname()
+                #split_name = str(EN_name).split(" ")
+                #if len(split_name) >= 2:
+                #    prefix_name = split_name[0]
+                #   first_name = split_name[1]
+                #   last_name = split_name[3]
+
+
+                TH_name=getData.getTHFullname()
+                split_name = str(TH_name).split(" ")
+                if len(split_name) >= 2:
+                    prefix_name = split_name[0]
+                    first_name = split_name[1]
+                    last_name = split_name[3]
+
+
+
+
+                date_birth = getData.getDateofbirth()
+                getImage.photoCard("card_temp")
+                getImage.resizeImg2("card_temp")
+
+                
+                self.canvas.create_text(320, 50, text=cid,fill='#000',font=self.font2)
+                #self.canvas.create_text(270, 75, text=TH_name,fill='#000',font=font2)
+                
+                self.canvas.create_text(185, 90, text=prefix_name,fill='#000',font=self.font1)
+                self.canvas.create_text(265, 90, text=first_name,fill='#000',font=self.font1,anchor="e")
+                self.canvas.create_text(265, 110, text=last_name,fill='#000',font=self.font1,anchor="e")
+
+                self.canvas.create_text(260, 130, text=date_birth,fill='#000',font=self.font1)
+
+                
+                self.image_path_card = r"images/card_temp.png"
+    
+                self.image_card = Image.open(self.image_path_card)
+                self.tk_image_card = ImageTk.PhotoImage(file=self.image_path_card)
+                self.image_item_id=self.canvas.create_image(365, 180, image=self.tk_image_card)
+            
+            
+            
+        
             if len(cid)==13:
-                self.sysInfo.set("--กรุณาสอดแขนเข้าเครื่องวัดความดัน--")
+                self.progressbar.place_forget()
+                self.progressbar.stop()
+                #self.sysInfo.set("--กรุณาสอดแขนเข้าเครื่องวัดความดัน--")
+                self.canvas_background.delete(self.text_item_id)
+                self.text_item_id=self.text_item_id=self.canvas_background.create_text(750, 50, text="--กรุณาสอดแขนเข้าเครื่องวัดความดัน--",fill='#fff',font=self.font3)
                 dataResult =self.open_serial_port()
                 #dataResult =returnDataUSB()
                 
@@ -135,24 +217,36 @@ class PrintObserver(CardObserver):
 
                 
 
-            #self.cid.set(cid)
-            self.sysValue.set(sysValue)
-            self.diaValue.set(diaValue)
-            self.pulseVvalue.set(pulseVvalue)
-            self.sysInfo.set("-- วัดความดันเรียบร้อยแล้ว --")
+            
+                self.sysValue.set(sysValue)
+                self.diaValue.set(diaValue)
+                self.pulseVvalue.set(pulseVvalue)
+                #self.sysInfo.set("-- วัดความดันเรียบร้อยแล้ว --")
+                self.canvas_background.delete(self.text_item_id)
+                self.text_item_id=self.canvas_background.create_text(750, 50, text="-- วัดความดันเรียบร้อยแล้ว --",fill='#fff',font=self.font3)
             
 
         for card in removedcards:
             print("-Removed: ", toHexString(card.atr))
-            mydb.updateCardStatus(False)
+             
+            self.canvas.delete(self.image_item_id)
+           
+            self.image_path = r"images/card_image.png"
+            self.image = Image.open(self.image_path)
+            self.tk_image = ImageTk.PhotoImage(file=self.image_path)
+            self.canvas.config(width=self.image.width, height=self.image.height)
+            self.canvas.create_image(0, 0, anchor=NW, image=self.tk_image)
+            
+            
             self.sysValue.set("")
             self.diaValue.set("")
             self.pulseVvalue.set("")
-            self.sysInfo.set("-- กรุณาเสียบบัตรประจำตัวประชาชน --")
+            #self.sysInfo.set("-- กรุณาเสียบบัตรประจำตัวประชาชน --")
+            self.canvas_background.delete(self.text_item_id)
+            self.text_item_id=self.canvas_background.create_text(750, 50, text="-- กรุณาเสียบบัตรประจำตัวประชาชน --",fill='#fff',font=self.font3)
             break
 
 
- 
 
 def update_opdscreen(cid,bps,bpd,pulse):
     sql = "SELECT vn FROM ovst o INNER JOIN patient p on p.hn = o.hn WHERE p.cid =%s AND o.vstdate =date(NOW()) \
@@ -169,8 +263,8 @@ def update_opdscreen(cid,bps,bpd,pulse):
             vn = row['vn']
         print("VN :"+vn)
                   
-    except:
-        print("Not Found Database")
+    except Exception as e:
+        logging.error("Not Found Database")
         exit
    
     else:
@@ -189,13 +283,14 @@ def update_opdscreen(cid,bps,bpd,pulse):
             cursor.execute(sql_delete,(vn))# 1 row.
             cursor.execute(sql_insert, (opdscreenbp_id,vn,bps,bpd))# 1 row.        
             print("Successful Update")
+            logging.info("Update :"+vn)
         else:
-            print("UnSuccessful Update Not Found VN")      
+            print("UnSuccessful Update Not Found VN")
+            logging.error("Error in update :"+vn)      
     finally:  
         cursor.close()
         connection.close()
     return
-
 
 
 def gui():
@@ -204,7 +299,38 @@ def gui():
     root.geometry('1300x600')
     root['bg']='#235D3A'
     root.title("smartBP | ระบบส่งข้อมูลเครื่องวัดความดัน")
-    root.iconbitmap('heartbeats.ico')
+    root.iconbitmap('images/heartbeats.ico')
+    root.attributes('-fullscreen', True)
+
+    
+
+    # Create a canvas to draw the gradient background
+    canvas_background = Canvas(root, width=1600, height=1200)  # Adjust the size of the canvas as per your requirements
+    canvas_background.pack()
+
+     
+
+# Define the colors for the gradient
+    color1 = "#235D3A"  # Start color (white)
+    color2 = "#c0c0c0"  # End color (light gray)
+
+# Create the gradient background
+    for y in range(1200):  # Adjust the range as per the height of the canvas
+        # Calculate the intermediate color based on the y-coordinate
+            r = int(color1[1:3], 16) + (int(color2[1:3], 16) - int(color1[1:3], 16)) * y // 1200
+            g = int(color1[3:5], 16) + (int(color2[3:5], 16) - int(color1[3:5], 16)) * y // 1200
+            b = int(color1[5:7], 16) + (int(color2[5:7], 16) - int(color1[5:7], 16)) * y // 1200
+
+        # Convert the RGB values to hexadecimal
+            color = f"#{r:02x}{g:02x}{b:02x}"
+
+        # Create a rectangle with the calculated color
+            canvas_background.create_rectangle(0, y, 1600, y + 1, fill=color, outline="")
+
+
+
+# Quit the application when Esc key is pressed
+    root.bind('<Escape>', lambda event: root.quit())
 
     cid = StringVar()
     ptName = StringVar()
@@ -216,50 +342,26 @@ def gui():
     serialport = StringVar()
     baudrate = StringVar()
 
-    big_digit_font1 = Font(family="Helvetica", size=40, weight="bold")
+    big_digit_font1 = Font(family="Tahoma", size=40, weight="bold")
     big_digit_font2 = Font(family="Tahoma", size=60, weight="bold")
-    big_digit_font3 = Font(family="Tahoma", size=40, weight="bold")
+    big_digit_font3 = Font(family="Tahoma", size=30, weight="bold")
 
-    labelframe = LabelFrame(root, text="ข้อมูลบัตรประชาชน",font=("Tahoma",12),width='300',height='190')
-    #labelframe.grid(row=1,column=0,sticky="NSEW",padx=10,pady=10,rowspan=5)
-
-    #Title
-    label_title = Label(root,textvariable=sysInfo,font=big_digit_font1,bg='#235D3A',fg='#FFEDF6')
-    label_title.place(x=270,y=20)
-
-    label_cid = Label(root, text="เลขบัตรประชาชน",font=("Tahoma", 14),anchor='e')
-    #label_cid.grid(row=2,column=0,sticky="W",padx=15)
-
-    label_name = Label(root, text="ชื่อ-นามสกุล",font=("Tahoma", 14),anchor='e')
-    #label_name.grid(row=3,column=0,sticky="W",padx=15)
-
-    label_birth = Label(root, text="อายุ",font=("Tahoma", 14),anchor='e')
-    #label_birth.grid(row=4,column=0,sticky="W",padx=15)
-
-    lbl_cid = Label(root, width=20, textvariable=cid,font=("Tahoma", 14),anchor='w')
-    #lbl_cid.grid(row=2,column=0,padx=100)
-
-    lbl_name = Label(root, width=20, textvariable=ptName,font=("Tahoma", 10),anchor='w')
-    #lbl_name.grid(row=3,column=0,padx=100)
-
-    lbl_birth = Label(root, width=20, textvariable=ptBirth,font=("Tahoma", 10),anchor='w')
-    #lbl_birth.grid(row=4,column=0,padx=100)
+    
 
 
-     
 
-    label_sys = Label(root, text="SYS",font=big_digit_font1,anchor='e',bg='#235D3A',fg='#fff')
-    label_sys.place(x=750,y=150)
+    #label_sys = Label(root, text="SYS",font=big_digit_font1,anchor='e',bg='#235D3A',fg='#fff')
+    #label_sys.place(x=750,y=150)
     label_mmhg = Label(root, text="mmHg",font=("Tahoma", 16),anchor='e',bg='#235D3A',fg='#fff')
     label_mmhg.place(x=785,y=210)
 
     label_dia = Label(root, text="DIA",font=big_digit_font1,anchor='e',bg='#235D3A',fg='#fff')
-    label_dia.place(x=750,y=300)
+    #label_dia.place(x=750,y=300)
     label_mmhg1 = Label(root, text="mmHg",font=("Tahoma", 16),anchor='e',bg='#235D3A',fg='#fff')
     label_mmhg1.place(x=785,y=360)
 
     label_dia = Label(root, text="PULSE",font=big_digit_font1,anchor='e',bg='#235D3A',fg='#fff')
-    label_dia.place(x=680,y=450)
+    #label_dia.place(x=680,y=450)
     label_mmhg2 = Label(root, text="/min",font=("Tahoma", 16),anchor='e',bg='#235D3A',fg='#fff')
     label_mmhg2.place(x=790,y=510)
 
@@ -274,22 +376,33 @@ def gui():
     label_pulseResult = Label(root, width=5, textvariable=pulseVvalue,font=big_digit_font2,bg='#74927A',fg='#fff',anchor='center')
     label_pulseResult.place(x=870,y=450)
 
-
-
-    image_path = "card_image.png"
+ 
+    #ใส่รูปภาพ card_image
+    image_path = r"images/card_image.png"
+    image = Image.open(image_path)
     tk_image = ImageTk.PhotoImage(file=image_path)
+    canvas = Canvas(root, width=image.width, height=image.height,highlightthickness=0, relief='ridge')
 
-    # Create a label and display the image
-    image_label = Label(root, image=tk_image)
-    image_label.place(x=100,y=150)
+    
+    canvas.place(x=100,y=150)
+    canvas.create_image(0, 0, anchor=NW, image=tk_image)
+    
+     
+    #Label ค่าความดัน
+    canvas_background.create_text(800, 180, text="SYS",fill='#fff',font=big_digit_font1)
+    canvas_background.create_text(800, 330, text="DIA",fill='#fff',font=big_digit_font1)
+    canvas_background.create_text(760, 480, text="PULSE",fill='#fff',font=big_digit_font1)
+
+    #Progress Bar
+    progress_bar = ttk.Progressbar(root, mode="indeterminate" ,length=430)
+    
 
 
-    print("Insert or remove a smartcard in the system.")
-    print("This program will exit in 10 seconds")
-    print("")
     cardmonitor = CardMonitor()
-    cardobserver = PrintObserver(cid,sysValue,diaValue,pulseVvalue,sysInfo,serialport,baudrate)
+    cardobserver = PrintObserver(cid,sysValue,diaValue,pulseVvalue,sysInfo,serialport,baudrate,canvas,canvas_background,progress_bar)
     cardmonitor.addObserver(cardobserver)
+
+    
     
     root.mainloop()
     

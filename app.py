@@ -77,6 +77,7 @@ class PrintObserver(CardObserver):
         except Exception as e:
             print("Error opening serial port:", str(e))
             self.sysInfo.set(str(e))
+            logging.error(str(e))
             
         else:
             if self.serial.is_open:
@@ -87,6 +88,7 @@ class PrintObserver(CardObserver):
                         data = self.serial.readline().decode().strip()
                     except Exception as e:
                         print("Error opening serial port:", str(e))
+                        logging.error(str(e))
                     # Check if there is data
                     if data:
                         print("Received data:", data)
@@ -148,83 +150,96 @@ class PrintObserver(CardObserver):
 
             try:
                 cid=getData.checkCard()
+                 
             except:
-                
                 self.progressbar.stop()
                 self.progressbar.place_forget()
                 self.canvas_background.delete(self.text_item_id)
                 self.text_item_id=self.text_item_id=self.canvas_background.create_text(750, 50, text="-- ไม่สามารถอ่านข้อมูลจากบัตร --",fill='#fff',font=self.font3)
-           
+                continue
+                #self.canvas_background.delete(self.text_item_id)
+                #self.text_item_id=self.text_item_id=self.canvas_background.create_text(750, 50, text="-- กรุณาเสียบบัตรประจำตัวประชาชน --",fill='#fff',font=self.font3)
+            
             else:
-                EN_name =getData.getENFullname()
-                #split_name = str(EN_name).split(" ")
-                #if len(split_name) >= 2:
-                #    prefix_name = split_name[0]
-                #   first_name = split_name[1]
-                #   last_name = split_name[3]
-
-
-                TH_name=getData.getTHFullname()
-                split_name = str(TH_name).split(" ")
-                if len(split_name) >= 2:
-                    prefix_name = split_name[0]
-                    first_name = split_name[1]
-                    last_name = split_name[3]
-
-
-
-
-                date_birth = getData.getDateofbirth()
-                getImage.photoCard("card_temp")
-                getImage.resizeImg2("card_temp")
-
                 
-                self.canvas.create_text(320, 50, text=cid,fill='#000',font=self.font2)
-                #self.canvas.create_text(270, 75, text=TH_name,fill='#000',font=font2)
-                
-                self.canvas.create_text(185, 90, text=prefix_name,fill='#000',font=self.font1)
-                self.canvas.create_text(265, 90, text=first_name,fill='#000',font=self.font1,anchor="e")
-                self.canvas.create_text(265, 110, text=last_name,fill='#000',font=self.font1,anchor="e")
+                try:
+                    TH_name=getData.getTHFullname()
+                except:
+                    logging.error("Cannot get TH_name")
+                    prefix_name = ""
+                    first_name = ""
+                    last_name = ""
 
-                self.canvas.create_text(260, 130, text=date_birth,fill='#000',font=self.font1)
-
-                
-                self.image_path_card = r"images/card_temp.png"
-    
-                self.image_card = Image.open(self.image_path_card)
-                self.tk_image_card = ImageTk.PhotoImage(file=self.image_path_card)
-                self.image_item_id=self.canvas.create_image(365, 180, image=self.tk_image_card)
-            
-            
-            
-        
-            if len(cid)==13:
-                self.progressbar.place_forget()
-                self.progressbar.stop()
-                #self.sysInfo.set("--กรุณาสอดแขนเข้าเครื่องวัดความดัน--")
-                self.canvas_background.delete(self.text_item_id)
-                self.text_item_id=self.text_item_id=self.canvas_background.create_text(750, 50, text="--กรุณาสอดแขนเข้าเครื่องวัดความดัน--",fill='#fff',font=self.font3)
-                dataResult =self.open_serial_port()
-                #dataResult =returnDataUSB()
-                
-                if len(dataResult) >= 8:
-                    sysValue = dataResult[7]
-                    diaValue = dataResult[8]
-                    pulseVvalue = dataResult[9]
-                    update_opdscreen(cid,sysValue,diaValue,pulseVvalue)
+                     
                 else:
-                    print("Err")
+                    split_name = str(TH_name).split(" ")
+                    if len(split_name) >= 2:
+                        prefix_name = split_name[0]
+                        first_name = split_name[1]
+                        last_name = split_name[3]
 
+                    
+
+
+
+                try:
+                    date_birth = getData.getDateofbirth()
+                except:
+                    logging.error("Cannot get birth")
+                    date_birth = ""
+                    
                 
 
-            
-                self.sysValue.set(sysValue)
-                self.diaValue.set(diaValue)
-                self.pulseVvalue.set(pulseVvalue)
-                #self.sysInfo.set("-- วัดความดันเรียบร้อยแล้ว --")
-                self.canvas_background.delete(self.text_item_id)
-                self.text_item_id=self.canvas_background.create_text(750, 50, text="-- วัดความดันเรียบร้อยแล้ว --",fill='#fff',font=self.font3)
-            
+                #resize image
+                try:
+                    getImage.photoCard("card_temp")
+                except:
+                    logging.error("Cannot get Image")
+
+                else:
+                    getImage.resizeImg2("card_temp")
+                    self.image_path_card = r"images/card_temp.png"
+
+                    self.image_card = Image.open(self.image_path_card)
+                    self.tk_image_card = ImageTk.PhotoImage(file=self.image_path_card)
+                    self.image_item_id=self.canvas.create_image(367, 178, image=self.tk_image_card)
+
+                 
+                
+                if len(cid)==13:
+                    self.canvas.create_text(320, 50, text=cid,fill='#000',font=self.font2)
+                    #self.canvas.create_text(270, 75, text=TH_name,fill='#000',font=font2)
+                    
+                    self.canvas.create_text(170, 90, text=prefix_name,fill='#000',font=self.font1,anchor="w")
+                    self.canvas.create_text(200, 90, text=first_name,fill='#000',font=self.font1,anchor="w")
+                    self.canvas.create_text(200, 110, text=last_name,fill='#000',font=self.font1,anchor="w")
+                    self.canvas.create_text(210, 130, text=date_birth,fill='#000',font=self.font1,anchor="w")
+
+                    self.progressbar.place_forget()
+                    self.progressbar.stop()
+
+                    self.canvas_background.delete(self.text_item_id)
+                    self.text_item_id=self.text_item_id=self.canvas_background.create_text(750, 50, text="--กรุณาสอดแขนเข้าเครื่องวัดความดัน--",fill='#fff',font=self.font3)
+                
+                    dataResult =self.open_serial_port()
+                
+                    
+                    if len(dataResult) >= 8:
+                        sysValue = dataResult[7]
+                        diaValue = dataResult[8]
+                        pulseVvalue = dataResult[9]
+                        update_opdscreen(cid,sysValue,diaValue,pulseVvalue)
+                    else:
+                        print("Err")
+
+                    
+                    self.sysValue.set(sysValue)
+                    self.diaValue.set(diaValue)
+                    self.pulseVvalue.set(pulseVvalue)
+                    #self.sysInfo.set("-- วัดความดันเรียบร้อยแล้ว --")
+                    self.canvas_background.delete(self.text_item_id)
+                    self.text_item_id=self.canvas_background.create_text(750, 50, text="-- วัดความดันเรียบร้อยแล้ว --",fill='#fff',font=self.font3)
+                     
 
         for card in removedcards:
             print("-Removed: ", toHexString(card.atr))
@@ -300,7 +315,7 @@ def gui():
     root['bg']='#235D3A'
     root.title("smartBP | ระบบส่งข้อมูลเครื่องวัดความดัน")
     root.iconbitmap('images/heartbeats.ico')
-    root.attributes('-fullscreen', True)
+    #root.attributes('-fullscreen', True)
 
     
 

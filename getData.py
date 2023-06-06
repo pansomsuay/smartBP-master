@@ -152,6 +152,8 @@ def checkCard():
                     data, sw1, sw2 = connection.transmit(SELECT + THAI_CARD)
                     print ("Select Applet: %02X %02X" % (sw1, sw2))
                     count = []#เก็บข้อมูลตัวเลข และวันที่แปลงเป็นตัวหนังสือ 
+                    
+                    
                      # CID
                     data = getData(CMD_CID, req)
                     cid = thai2unicode(data[0])
@@ -206,6 +208,12 @@ def getENFullname():
                 except SWException as e:
                     print("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
                     print(str(e))
+
+
+
+
+
+
 def getTHFullname():
     TH=""
     r = readers()

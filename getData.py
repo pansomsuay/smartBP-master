@@ -14,12 +14,13 @@ from smartcard.CardConnectionObserver import ConsoleCardConnectionObserver
 from smartcard.sw.SWExceptions import SWException, WarningProcessingException
  
 import pymysql
+import logging
 
 #ตัวเก็บข้อมูลทุกอย่างไว้ใน list
 count = []#เก็บข้อมูลตัวเลข และวันที่แปลงเป็นตัวหนังสือ 
 monthThai = ['null','ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
 monthEng = ['null','January','February','March','April','May','June','July','August','September','October','November','December']
-  
+logging.basicConfig(filename='app.log', level=logging.DEBUG, format='%(asctime)s %(levelname)s: %(message)s')
 
 try :
     SELECT = [0x00, 0xA4, 0x04, 0x00, 0x08] # Check card
@@ -151,21 +152,17 @@ def checkCard():
                 try:    
                     data, sw1, sw2 = connection.transmit(SELECT + THAI_CARD)
                     print ("Select Applet: %02X %02X" % (sw1, sw2))
-                    count = []#เก็บข้อมูลตัวเลข และวันที่แปลงเป็นตัวหนังสือ 
-                    
-                    
                      # CID
                     data = getData(CMD_CID, req)
                     cid = thai2unicode(data[0])
-                    count.append(cid)
+                     
                     print ("เลขประจำตัวประชาชน: " + cid)
-
-            
-                    
                     return cid
+                
                 except SWException as e:
                     print("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
                     print(str(e))
+                    logging.error('Line 170'+str(e))
                 
 def getENFullname():
     EN=""
@@ -208,10 +205,7 @@ def getENFullname():
                 except SWException as e:
                     print("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
                     print(str(e))
-
-
-
-
+                    logging.error('Line 213'+str(e))
 
 
 def getTHFullname():
@@ -255,6 +249,8 @@ def getTHFullname():
                 except SWException as e:
                     print("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
                     print(str(e))
+                    logging.error('Line 257'+str(e))
+                    return
 
 def getAddress():
     TH=""
@@ -297,6 +293,7 @@ def getAddress():
                 except SWException as e:
                     print("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
                     print(str(e))
+                    logging.error('Line 300'+str(e))
 
 def getDateofbirth():
     date_birth=""
@@ -354,6 +351,8 @@ def getDateofbirth():
                 except SWException as e:
                     print("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
                     print(str(e))
+                    logging.error('Line 358'+str(e))
+                    return
                                        
 
 def getPhoto(cid):
@@ -402,13 +401,16 @@ def getPhoto(cid):
                             f.close()
                     except SWException as e:
                         print(str(e))
+                        logging.error('Line 407'+str(e))
+                        return
                 
                     
                     
                 except SWException as e:
                     print("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
                     print(str(e))
-                               
+                    logging.error('Line 413'+str(e))
+                    return          
   
 def getMobilePhone(cid):
     try:

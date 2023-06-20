@@ -70,6 +70,7 @@ def resizeImg(fileName): #ปรับขนาดรูป
 
 
 def resizeImg2(fileName):
+    check_image ='Y'
     filePattern = 'images/' + fileName + '.png'
     files = glob.glob(filePattern)
     
@@ -84,10 +85,13 @@ def resizeImg2(fileName):
                 cover = resizeimage.resize_cover(cover, [90, 110])
                 cover.save(name, image.format)
                 print(f"Resized image: {name}")
+                check_image ='Y'
         except Exception as e:
             print(f"Error resizing image {name}: {e}")
-
-
+            check_image ='N'
+            return check_image
+        
+    return check_image
 #resizeImg2("card_temp")
 
 

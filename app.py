@@ -15,14 +15,17 @@ import serial
 import configparser
 import logging
 import getImage
+import threading
+
+ 
 logging.basicConfig(filename='app.log', level=logging.ERROR, format='%(asctime)s %(levelname)s: %(message)s')
  
 config = configparser.RawConfigParser()
 config.read('app-config.ini')
 serialport=config.get('HOSxP','serialport')
 
-
-  
+class TimeoutError(Exception):
+    pass
  
 # a simple card observer that prints inserted/removed cards
 class PrintObserver(CardObserver):
@@ -30,7 +33,7 @@ class PrintObserver(CardObserver):
     when cards are inserted/removed from the system and
     prints the list of cards
     """
-    def __init__(self,cid,sysValue,diaValue,pulseVvalue,sysInfo,serialport,baudrate,canvas,canvas_background,progress_bar):
+    def __init__(self,cid,sysValue,diaValue,pulseVvalue,sysInfo,serialport,baudrate,canvas,canvas_background,progress_bar,barcode_entry,canvas_bacode):
         self.observer = ConsoleCardConnectionObserver()
         config = configparser.RawConfigParser()
         config.read('app-config.ini')
@@ -52,19 +55,22 @@ class PrintObserver(CardObserver):
         self.canvas_background = canvas_background
         global text_item_id 
         self.progressbar = progress_bar
-         
+        self.serial = None
         #self.sysInfo.set("-- กรุณาเสียบบัตรประจำตัวประชาชน --")
         self.text_item_id=self.canvas_background.create_text(750, 50, text="-- กรุณาเสียบบัตรประจำตัวประชาชน --",fill='#fff',font=self.font3)
-        
-
+        self.barcode_entry= barcode_entry
+        self.canvas_bacode = canvas_bacode
+    
     def open_serial_port(self):
         try:
+            
             self.serial = serial.Serial(serialport, 9600, timeout=1)
+            
         # Rest of your code
         except Exception as e:
             print("Error opening serial port:", str(e))
-            logging.error(str(e))
-        #self.serial = serial.Serial(serialport, 9600, timeout=1)
+            logging.error('Line 68'+str(e))
+         
         self.serial.close()
         try:
             if not self.serial.is_open:
@@ -77,18 +83,18 @@ class PrintObserver(CardObserver):
         except Exception as e:
             print("Error opening serial port:", str(e))
             self.sysInfo.set(str(e))
-            logging.error(str(e))
+            logging.error('Line 82'+str(e))
             
         else:
             if self.serial.is_open:
-            
+                
                 # Read data from the pressure gauge
                 while True:
                     try:
                         data = self.serial.readline().decode().strip()
                     except Exception as e:
                         print("Error opening serial port:", str(e))
-                        logging.error(str(e))
+                        logging.error('Line'+str(e))
                     # Check if there is data
                     if data:
                         print("Received data:", data)
@@ -96,7 +102,7 @@ class PrintObserver(CardObserver):
                     # Break the loop if 'q' is entered
                     if data == 'q':
                         break
-
+                    
                     # Split the data by comma
                     split_data = data.split(",")
 
@@ -124,7 +130,33 @@ class PrintObserver(CardObserver):
         else:
             print("Serial port is already closed.")
 
-    
+######################## Run with timeount ##############################
+
+    def run_with_timeout(self, func, timeout_seconds):
+        # Create an event object to communicate between threads
+        self.event = threading.Event()
+
+        def timeout_func():
+            self.event.wait(timeout_seconds)  # Wait for the specified timeout
+            if not self.event.is_set():
+                self.event.set()
+                raise TimeoutError("Function timed out")
+
+        # Create a thread for the timeout function
+        self.timeout_thread = threading.Thread(target=timeout_func)
+
+        try:
+            self.timeout_thread.start()  # Start the timeout thread
+            self.result = func()  # Run the function
+            self.event.set()  # Set the event to indicate successful completion
+            self.timeout_thread.join()  # Wait for the timeout thread to finish
+            return self.result
+        except TimeoutError:
+            print("Function timed out")
+            self.progressbar.place_forget()
+            self.progressbar.stop()
+            exit
+            # Handle the timeout error as desired
 
 ############## Card Monitor ##############################################
 
@@ -132,14 +164,15 @@ class PrintObserver(CardObserver):
         (addedcards, removedcards) = actions
         for card in addedcards:
             print("+Inserted: ", toHexString(card.atr))
-            #self.sysInfo.set("-- กำลังอ่านข้อมูลจากบัตร--")
+            
+            #Progress bar
             self.progressbar.place(x=100, y=450)
             self.progressbar.start()
              
             self.canvas_background.delete(self.text_item_id)
             self.text_item_id=self.text_item_id=self.canvas_background.create_text(750, 50, text="-- กำลังอ่านข้อมูลจากบัตร--",fill='#fff',font=self.font3)
 
-
+            #insert image 
             self.canvas.delete('all')
             self.image_path = r"images/card_insert.png"
             self.image = Image.open(self.image_path)
@@ -147,30 +180,44 @@ class PrintObserver(CardObserver):
             self.canvas.config(width=self.image.width, height=self.image.height)
             self.canvas.create_image(0, 0, anchor=NW, image=self.tk_image)
             
+            #ลบ barcode_entry 
 
+            self.barcode_entry.place_forget()
+            self.canvas_bacode.place_forget()
+            
+            # Read CID
             try:
-                cid=getData.checkCard()
-                 
-            except:
+                cid = self.run_with_timeout(getData.checkCard, 10)
+                print("Function completed successfully")
+            except TimeoutError:
+                print("Function execution exceeded the timeout")
+
+                logging.error('CID 155'+str(e))
                 self.progressbar.stop()
                 self.progressbar.place_forget()
                 self.canvas_background.delete(self.text_item_id)
                 self.text_item_id=self.text_item_id=self.canvas_background.create_text(750, 50, text="-- ไม่สามารถอ่านข้อมูลจากบัตร --",fill='#fff',font=self.font3)
-                continue
+                break
                 #self.canvas_background.delete(self.text_item_id)
                 #self.text_item_id=self.text_item_id=self.canvas_background.create_text(750, 50, text="-- กรุณาเสียบบัตรประจำตัวประชาชน --",fill='#fff',font=self.font3)
-            
+        
             else:
                 
                 try:
                     TH_name=getData.getTHFullname()
-                except:
+                except Exception as e:
+                    logging.error(str(e))
                     logging.error("Cannot get TH_name")
                     prefix_name = ""
                     first_name = ""
                     last_name = ""
-
-                     
+                    logging.error(str(e))
+                    self.progressbar.stop()
+                    self.progressbar.place_forget()
+                    self.canvas_background.delete(self.text_item_id)
+                    self.text_item_id=self.text_item_id=self.canvas_background.create_text(750, 50, text="-- ไม่สามารถอ่านข้อมูลจากบัตร --",fill='#fff',font=self.font3)
+                    break
+                    
                 else:
                     split_name = str(TH_name).split(" ")
                     if len(split_name) >= 2:
@@ -178,32 +225,44 @@ class PrintObserver(CardObserver):
                         first_name = split_name[1]
                         last_name = split_name[3]
 
-                    
-
-
-
                 try:
                     date_birth = getData.getDateofbirth()
-                except:
-                    logging.error("Cannot get birth")
-                    date_birth = ""
+                except Exception as e:
+                    logging.error('191 Date of birth'+str(e))
                     
-                
-
+                    date_birth = ""
+                     
+                    self.progressbar.stop()
+                    self.progressbar.place_forget()
+                    self.canvas_background.delete(self.text_item_id)
+                    self.text_item_id=self.text_item_id=self.canvas_background.create_text(750, 50, text="-- ไม่สามารถอ่านข้อมูลจากบัตร --",fill='#fff',font=self.font3)
+                    break
+                    
                 #resize image
                 try:
                     getImage.photoCard("card_temp")
-                except:
+                except Exception as e:
+                    logging.error(str(e))
                     logging.error("Cannot get Image")
+                    logging.error(str(e))
+                    self.progressbar.stop()
+                    self.progressbar.place_forget()
+                    self.canvas_background.delete(self.text_item_id)
+                    self.text_item_id=self.text_item_id=self.canvas_background.create_text(750, 50, text="-- ไม่สามารถอ่านข้อมูลจากบัตร --",fill='#fff',font=self.font3)
+                    break
 
                 else:
-                    getImage.resizeImg2("card_temp")
-                    self.image_path_card = r"images/card_temp.png"
+                    check_image=getImage.resizeImg2("card_temp")
+                    print(check_image)
+                    if check_image =='Y':
+                        self.image_path_card = r"images/card_temp.png"
 
-                    self.image_card = Image.open(self.image_path_card)
-                    self.tk_image_card = ImageTk.PhotoImage(file=self.image_path_card)
-                    self.image_item_id=self.canvas.create_image(367, 178, image=self.tk_image_card)
+                        self.image_card = Image.open(self.image_path_card)
+                        self.tk_image_card = ImageTk.PhotoImage(file=self.image_path_card)
+                        self.image_item_id=self.canvas.create_image(367, 178, image=self.tk_image_card)
+                    else:
 
+                        pass
                  
                 
                 if len(cid)==13:
@@ -220,45 +279,61 @@ class PrintObserver(CardObserver):
 
                     self.canvas_background.delete(self.text_item_id)
                     self.text_item_id=self.text_item_id=self.canvas_background.create_text(750, 50, text="--กรุณาสอดแขนเข้าเครื่องวัดความดัน--",fill='#fff',font=self.font3)
-                
-                    dataResult =self.open_serial_port()
-                
-                    
-                    if len(dataResult) >= 8:
-                        sysValue = dataResult[7]
-                        diaValue = dataResult[8]
-                        pulseVvalue = dataResult[9]
-                        update_opdscreen(cid,sysValue,diaValue,pulseVvalue)
-                    else:
-                        print("Err")
 
+                    try:
+                        dataResult =self.open_serial_port()
+                    except Exception as e:
+                        logging.error(str(e))
+                    else:                   
+                        if len(dataResult) >= 8:
+                            sysValue = dataResult[7]
+                            diaValue = dataResult[8]
+                            pulseVvalue = dataResult[9]
+
+                            update_opdscreen(cid,sysValue,diaValue,pulseVvalue)
+
+                            #แสดงผลค่าความดัน
+                            self.close_serial_port()
+                            self.sysValue.set(sysValue)
+                            self.diaValue.set(diaValue)
+                            self.pulseVvalue.set(pulseVvalue)
+                            #self.sysInfo.set("-- วัดความดันเรียบร้อยแล้ว --")
+                            self.canvas_background.delete(self.text_item_id)
+                            self.text_item_id=self.canvas_background.create_text(750, 50, text="-- วัดความดันเรียบร้อยแล้ว --",fill='#fff',font=self.font3)
+
+                        else:
+                            print("Err")
+                            pass
                     
-                    self.sysValue.set(sysValue)
-                    self.diaValue.set(diaValue)
-                    self.pulseVvalue.set(pulseVvalue)
-                    #self.sysInfo.set("-- วัดความดันเรียบร้อยแล้ว --")
-                    self.canvas_background.delete(self.text_item_id)
-                    self.text_item_id=self.canvas_background.create_text(750, 50, text="-- วัดความดันเรียบร้อยแล้ว --",fill='#fff',font=self.font3)
-                     
 
         for card in removedcards:
             print("-Removed: ", toHexString(card.atr))
              
             self.canvas.delete(self.image_item_id)
-           
+
+            #Insert card card_image
             self.image_path = r"images/card_image.png"
             self.image = Image.open(self.image_path)
             self.tk_image = ImageTk.PhotoImage(file=self.image_path)
             self.canvas.config(width=self.image.width, height=self.image.height)
             self.canvas.create_image(0, 0, anchor=NW, image=self.tk_image)
             
-            
+            #Insert canvas barcode
+            #Barcodenimage
+             
+            canvas_bacode.place(x=100,y=601)
+            canvas_bacode.create_image(0, 0, anchor=NW, image=tk_image_bacode)
+
+            #Clear 
             self.sysValue.set("")
             self.diaValue.set("")
             self.pulseVvalue.set("")
             #self.sysInfo.set("-- กรุณาเสียบบัตรประจำตัวประชาชน --")
             self.canvas_background.delete(self.text_item_id)
             self.text_item_id=self.canvas_background.create_text(750, 50, text="-- กรุณาเสียบบัตรประจำตัวประชาชน --",fill='#fff',font=self.font3)
+            self.barcode_entry.place(x=162,y=600)
+             
+             
             break
 
 
@@ -279,7 +354,7 @@ def update_opdscreen(cid,bps,bpd,pulse):
         print("VN :"+vn)
                   
     except Exception as e:
-        logging.error("Not Found Database")
+        logging.error(str(e))
         exit
    
     else:
@@ -308,23 +383,44 @@ def update_opdscreen(cid,bps,bpd,pulse):
     return
 
 
+def on_entry_click(event):
+    if barcode_entry.get() == 'Enter barcode...':
+        barcode_entry.delete(0, tk.END)
+        barcode_entry.configure(fg='black')
+
+def on_entry_leave(event):
+    if barcode_entry.get() == '':
+        barcode_entry.insert(0, 'Enter barcode...')
+        barcode_entry.configure(fg='gray')
+
+def on_barcode_change(*args):
+    barcode = barcode_var.get()
+    # Do something with the scanned barcode
+    print("Scanned barcode:", barcode)
+    
+
+def toggle_visibility():
+    if canvas_bacode.itemcget(image_id, "state") == "hidden":
+        canvas_bacode.itemconfigure(image_id, state="normal")
+    else:
+        canvas_bacode.itemconfigure(image_id, state="hidden")
+    canvas_bacode.after(500, toggle_visibility)  # Toggle visibility every 500 milliseconds
+
 def gui():
+    global barcode_entry,barcode_var,canvas_bacode,image_id,tk_image_bacode
     
     root = Tk()
     root.geometry('1300x600')
+    #root.attributes('-fullscreen', True)
     root['bg']='#235D3A'
     root.title("smartBP | ระบบส่งข้อมูลเครื่องวัดความดัน")
     root.iconbitmap('images/heartbeats.ico')
-    #root.attributes('-fullscreen', True)
-
     
-
     # Create a canvas to draw the gradient background
     canvas_background = Canvas(root, width=1600, height=1200)  # Adjust the size of the canvas as per your requirements
     canvas_background.pack()
 
      
-
 # Define the colors for the gradient
     color1 = "#235D3A"  # Start color (white)
     color2 = "#c0c0c0"  # End color (light gray)
@@ -356,12 +452,11 @@ def gui():
     sysInfo = StringVar()
     serialport = StringVar()
     baudrate = StringVar()
+    barcode_var = StringVar()
 
     big_digit_font1 = Font(family="Tahoma", size=40, weight="bold")
     big_digit_font2 = Font(family="Tahoma", size=60, weight="bold")
-    big_digit_font3 = Font(family="Tahoma", size=30, weight="bold")
-
-    
+    big_digit_barcode = Font(family="Tahoma", size=40, weight="bold")
 
 
 
@@ -387,22 +482,18 @@ def gui():
     label_diaResult = Label(root, width=5, textvariable=diaValue,font=big_digit_font2,bg='#74927A',fg='#fff',anchor='center')
     label_diaResult.place(x=870,y=300)
 
-
     label_pulseResult = Label(root, width=5, textvariable=pulseVvalue,font=big_digit_font2,bg='#74927A',fg='#fff',anchor='center')
     label_pulseResult.place(x=870,y=450)
 
- 
     #ใส่รูปภาพ card_image
     image_path = r"images/card_image.png"
     image = Image.open(image_path)
     tk_image = ImageTk.PhotoImage(file=image_path)
     canvas = Canvas(root, width=image.width, height=image.height,highlightthickness=0, relief='ridge')
 
-    
     canvas.place(x=100,y=150)
     canvas.create_image(0, 0, anchor=NW, image=tk_image)
     
-     
     #Label ค่าความดัน
     canvas_background.create_text(800, 180, text="SYS",fill='#fff',font=big_digit_font1)
     canvas_background.create_text(800, 330, text="DIA",fill='#fff',font=big_digit_font1)
@@ -411,16 +502,32 @@ def gui():
     #Progress Bar
     progress_bar = ttk.Progressbar(root, mode="indeterminate" ,length=430)
     
+    #Barcode Scan
+    barcode_var.trace('w', on_barcode_change)
+    barcode_entry = Entry(root,font=big_digit_barcode,width=10,textvariable=barcode_var)
+    barcode_entry.place(x=162,y=600)
+    barcode_entry.focus_set()
 
+    #Barcodenimage
+    image_path_bacode = r"images/scan_barcode_resize.png"
+    image_bacode = Image.open(image_path)
+    tk_image_bacode = ImageTk.PhotoImage(file=image_path_bacode)
+    canvas_bacode = Canvas(root, width=66, height=67,highlightthickness=0, relief='ridge',bg='#fff')
+    canvas_bacode.place(x=100,y=601)
+    canvas_bacode.create_image(0, 0, anchor=NW, image=tk_image_bacode)
+     
 
+    #Card Monitor
     cardmonitor = CardMonitor()
-    cardobserver = PrintObserver(cid,sysValue,diaValue,pulseVvalue,sysInfo,serialport,baudrate,canvas,canvas_background,progress_bar)
+    cardobserver = PrintObserver(cid,sysValue,diaValue,pulseVvalue,sysInfo,serialport,baudrate,canvas,canvas_background,progress_bar,barcode_entry,canvas_bacode)
     cardmonitor.addObserver(cardobserver)
 
-    
-    
     root.mainloop()
     
+
+
+
+
 if __name__ == '__main__':
     gui()
     
